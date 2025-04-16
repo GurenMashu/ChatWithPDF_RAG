@@ -7,7 +7,7 @@ import logging
 from fastembed import TextEmbedding
 
 from main import (
-    extract_text_from_pdf,
+    extract_text_from_document,
     chunk_text,
     create_embeddings_fastembed,
     create_chroma_client,
@@ -24,23 +24,22 @@ logging.getLogger("chromadb").setLevel(logging.WARNING)
 def main():
     st.set_page_config(page_title="Document Chat Assistant", page_icon="📚", layout="wide")
     
-    # Initialize session state variables
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
     if "document_processed" not in st.session_state:
         st.session_state.document_processed = False
+    if "documents" not in st.session_state:
+        st.session_state.documents=[]    
     
     with st.sidebar:
         st.title("📄 Document Upload")
-        uploaded_file = st.file_uploader("Upload a PDF document", type="pdf")
+        uploaded_file = st.file_uploader("Upload a document", type=["pdf", "docx", "txt", "csv"],
+                                            help="Supported formats: PDF, DOCX, TXT, CSV")
         
         if uploaded_file is not None:
-            # Create a temporary file
+            # Creating a temporary file
             temp_dir = tempfile.mkdtemp()
             path = os.path.join(temp_dir, uploaded_file.name)
-            
-            # Save the uploaded file to the temporary directory
             with open(path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             
@@ -49,11 +48,14 @@ def main():
                     success = process_document(path)
                     if success:
                         st.session_state.document_processed = True
+                        st.session_state.documents.append(uploaded_file.name)
                         st.success(f"Document '{uploaded_file.name}' processed successfully!")
-                        # Reset chat messages when a new document is processed
-                        st.session_state.messages = []
                     else:
                         st.error("Failed to process document. Please try again.")
+        if st.session_state.documents:
+            st.subheader("Processed Documents")
+            for doc in st.session_state.documents:
+                st.write(f"-{doc}")
 
         st.divider()  
 
@@ -63,6 +65,7 @@ def main():
             if empty_collection():
                 st.session_state.document_processed = False
                 st.session_state.messages = []
+                st.session_state.documents = []
                 st.success("Document data cleared successfully!")
             else:
                 st.error("Failed to clear document data.")               
@@ -70,15 +73,15 @@ def main():
         st.divider()
         st.markdown("### How to use")
         st.markdown("""
-        1. Upload a PDF document
-        2. Click 'Process Document'
-        3. Ask questions about the document content in the chat
+        1. Upload a document
+        2. Click [Process Document]
+        3. Ask questions about the document content in the chat!
         """)
     
     st.title("📚 Document Chat Assistant")
     
     if not st.session_state.document_processed:
-        st.info("Please upload and process a document using the sidebar to start chatting.")
+        st.info("Please upload a document using the sidebar to start chatting.")
     else:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
@@ -101,12 +104,22 @@ def main():
 def process_document(pdf_path):
     """Process the uploaded document with visual feedback"""
     with st.status("Processing document...", expanded=True) as status:
-        st.write("Extracting text from uploaded PDF...")
-        text = extract_text_from_pdf(pdf_path)
+        st.write("Extracting text from uploaded document...")
+        text = extract_text_from_document(pdf_path)
         if text is None:
-            status.update(label="Failed to load PDF", state="error")
+            status.update(label="Failed to load document", state="error")
             return False
         
+        doc_name=os.path.basename(pdf_path)
+        doc_id=f"doc_{hash(doc_name)}_{int(os.path.getmtime(pdf_path))}"
+        document_metadata={
+            "document_id":doc_id,
+            "document_name":doc_name,
+            "source_path":pdf_path,
+            "created_at":str(os.path.getctime(pdf_path)),
+            "modified_at":str(os.path.getmtime(pdf_path))
+        }
+
         st.write("Splitting text into chunks...")
         chunks = chunk_text(text)
         if not chunks:
@@ -126,7 +139,7 @@ def process_document(pdf_path):
             return False
         
         st.write("Storing the embeddings into database...")
-        if not add_to_chroma(chroma_collection, chunks, embeddings):
+        if not add_to_chroma(chroma_collection, chunks, embeddings, document_metadata):
             status.update(label="Failed to add data to ChromaDB", state="error")
             return False
             
