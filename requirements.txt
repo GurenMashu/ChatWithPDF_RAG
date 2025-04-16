@@ -1,0 +1,6 @@
+chromadb
+fastembed
+google-generativeai
+dotenv
+PyPDF2
+streamlit
