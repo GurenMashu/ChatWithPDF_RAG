@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+from datetime import datetime
 import tempfile
 from pathlib import Path
 import numpy as np
@@ -75,10 +76,10 @@ def main():
         st.markdown("""
         1. Upload a document
         2. Click [Process Document]
-        3. Ask questions about the document content in the chat!
+        3. Ask questions about the contents in the chat!
         """)
     
-    st.title("📚 Document Chat Assistant")
+    st.title("📚 Chat with Documents")
     
     if not st.session_state.document_processed:
         st.info("Please upload a document using the sidebar to start chatting.")
