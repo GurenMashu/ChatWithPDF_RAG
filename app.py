@@ -21,7 +21,6 @@ from main import (
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("chromadb").setLevel(logging.WARNING)
 
-# UI
 def main():
     st.set_page_config(page_title="Document Chat Assistant", page_icon="📚", layout="wide")
     
@@ -32,7 +31,6 @@ def main():
     if "document_processed" not in st.session_state:
         st.session_state.document_processed = False
     
-    # Sidebar for document upload
     with st.sidebar:
         st.title("📄 Document Upload")
         uploaded_file = st.file_uploader("Upload a PDF document", type="pdf")
@@ -57,9 +55,8 @@ def main():
                     else:
                         st.error("Failed to process document. Please try again.")
 
-        st.divider()  # Fixed missing parentheses
+        st.divider()  
 
-        # Database management section
         st.subheader("Database Management")
         
         if st.button("Clear Document Data", type="secondary", use_container_width=True):
@@ -78,32 +75,26 @@ def main():
         3. Ask questions about the document content in the chat
         """)
     
-    # Main area for chat interface
     st.title("📚 Document Chat Assistant")
     
     if not st.session_state.document_processed:
         st.info("Please upload and process a document using the sidebar to start chatting.")
     else:
-        # Display chat messages
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
         
         # Chat input
         if prompt := st.chat_input("Ask a question about your document"):
-            # Add user message to chat history
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            # Display user message
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            # Display assistant response
             with st.chat_message("assistant"):
                 response = get_answer(prompt)
                 st.markdown(response)
             
-            # Add assistant response to chat history
             st.session_state.messages.append({"role": "assistant", "content": response})
 ################################################## END OF UI STUFFS ^ ###################################################
 
