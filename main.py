@@ -3,6 +3,9 @@ import logging
 from pathlib import Path
 import numpy as np
 import PyPDF2
+import docx
+import csv
+import io
 import chromadb
 from fastembed import TextEmbedding
 import google.generativeai as genai
@@ -24,6 +27,58 @@ DEFAULT_COLLECTION_NAME = "documents_collection"
 DEFAULT_MODEL_NAME = "BAAI/bge-small-en"
 CHROMA_DB_PATH = "./chroma_db"
 UPLOADS_DIR = "uploads"
+
+def extract_text_from_document(file_path):
+    file_type=os.path.splitext(file_path)[1].lower()
+    if file_type==".pdf":
+        return extract_text_from_pdf(file_path)
+    elif file_type==".docx":
+        return extract_text_from_docx(file_path)
+    elif file_type==".txt":
+        return extract_text_from_txt(file_path)
+    elif file_type==".csv":
+        return extract_text_from_csv(file_path)
+    else:
+        logging.error(f"Unsupported file format: {file_type}")
+        return None
+
+def extract_text_from_docx(docx_path):
+    try:
+        doc=docx.Document(docx_path)
+        text="\n".join([paragraph.text for paragraph in doc.paragraphs])
+        return text
+    except Exception as e:
+        logging.erroe(f"Error extracting text from DOCX: {e}")
+        return None
+
+def extract_text_from_txt(txt_path):
+    try:
+        with open(txt_path,"r",encoding='utf-8') as f:
+            return f.read()
+    except UnicodeDecodeError:
+        try:
+            with open(txt_path,"r",encoding='latin-1') as f:
+                return f.read()
+        except Exception as e:
+            logging.error(f"Error extracting text from TXT(latin-1): {e}")
+            return None
+    except Exception as e:
+        logging.error(f"Error extracting text from TXT: {e}")
+        return None
+    
+def extract_text_from_csv(csv_path):
+    try:
+        text=[]
+        with open(csv_path,"r",encoding='utf-8') as f:
+            csv_reader=csv.reader(f)
+            headers=next(csv_reader,[])
+            for row in csv_reader:
+                row_text=", ".join([f"{headers[i]}: {value}" for i,value in enumerate(row) if i<len(headers)])
+                text.append(row_text)
+        return "\n".join(text)
+    except Exception as e:
+        logging.error(f"Error extracting text from csv: {e}")
+        return None        
 
 def extract_text_from_pdf(pdf_path):
     text = ""
@@ -91,17 +146,25 @@ def create_chroma_client(collection_name=DEFAULT_COLLECTION_NAME):
         logging.error(f"Error creating Chroma client: {e}")
         return None
 
-def add_to_chroma(collection, chunks, embeddings):
+def add_to_chroma(collection, chunks, embeddings, document_metadata=None):
     if not collection or not chunks or embeddings is None:
         logging.error("Missing required parameters for adding to Chroma")
         return False
     ids = [str(i) for i in range(len(chunks))]
     embeddings_list = embeddings.tolist()
+    metadatas=[]
+    for i in range(len(chunks)):
+        metadata={}
+        if document_metadata:
+            metadata.update(document_metadata)
+        metadata["chunk_id"]=i 
+        metadatas.append(metadata)   
     try:
         collection.add(
             embeddings=embeddings_list,
             documents=chunks,
-            ids=ids
+            ids=ids,
+            metadatas=metadatas
         )
         logging.info(f"Added {len(chunks)} chunks to ChromaDB")
         return True
@@ -114,8 +177,15 @@ def retrieve_from_chroma(collection, query_embedding, top_k=3):
         logging.error("Collection or query embedding is None")
         return []
     try:
-        results = collection.query(query_embeddings=query_embedding.tolist(), n_results=top_k)
-        return results["documents"][0] if results["documents"] else []
+        results = collection.query(query_embeddings=query_embedding.tolist(),
+                                    n_results=top_k,
+                                    include=["documents","metadatas"])
+        contexts=[]
+        for i,doc in enumerate(results["documents"][0]):
+            metadata=results["metadatas"][0][i]
+            doc_name=metadata.get("document_name","Unknown document")
+            contexts.append(f"[FROM: {doc_name}]\n{doc}")
+        return contexts
     except Exception as e:
         logging.error(f"Error retrieving from Chroma: {e}")
         return []
@@ -143,7 +213,21 @@ def empty_collection():
     try:
         collection = create_chroma_client()
         if collection:
-            collection.delete()
+            try:
+                #deleting the contents only
+                all_ids = collection.get(include=[])["ids"]
+                if all_ids:
+                    collection.delete(ids=all_ids)
+            except Exception as e:
+                try:
+                    #deleting the collection itself
+                    client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+                    client.delete_collection(name=DEFAULT_COLLECTION_NAME)
+                    client.get_or_create_collection(name=DEFAULT_COLLECTION_NAME)
+                except Exception as nested_e:
+                    logging.error(f"Error recreating collection: {nested_e}")
+                    return False
+            
             logging.info("ChromaDB collection emptied successfully")
             return True
         return False
