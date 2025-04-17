@@ -5,11 +5,11 @@ import numpy as np
 import PyPDF2
 import docx
 import csv
-import io
-import chromadb
 from fastembed import TextEmbedding
 import google.generativeai as genai
 from dotenv import load_dotenv
+from DBfuncs import create_chroma_client, add_to_chroma, retrieve_from_chroma, empty_collection
+from embedder import create_embeddings_fastembed
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("chromadb").setLevel(logging.WARNING)
@@ -23,9 +23,6 @@ else:
 
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_CHUNK_OVERLAP = 80
-DEFAULT_COLLECTION_NAME = "documents_collection"
-DEFAULT_MODEL_NAME = "BAAI/bge-small-en"
-CHROMA_DB_PATH = "./chroma_db"
 UPLOADS_DIR = "uploads"
 
 def extract_text_from_document(file_path):
@@ -107,18 +104,6 @@ def chunk_text(text, chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHUNK_
         start = end - chunk_overlap
     logging.info(f"Text split into {len(chunks)} chunks")
     return chunks
-
-def create_embeddings_fastembed(chunks, model_name=DEFAULT_MODEL_NAME):
-    if not chunks:
-        logging.warning("No chunks provided for embedding creation")
-        return None
-    try:
-        model = TextEmbedding(model_name=model_name)
-        embeddings = list(model.embed(chunks))
-        return np.array(embeddings)
-    except Exception as e:
-        logging.error(f"Error creating embeddings: {e}")
-        return None
     
 def generate_answer(query, context):
     if not API_KEY:
@@ -135,60 +120,6 @@ def generate_answer(query, context):
     except Exception as e:
         logging.error(f"Error generating answer: {e}")
         return f"Sorry, couldn't generate an answer. Error: {str(e)}"
-    
-def create_chroma_client(collection_name=DEFAULT_COLLECTION_NAME):
-    try:
-        Path(CHROMA_DB_PATH).mkdir(parents=True, exist_ok=True)
-        client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
-        collection = client.get_or_create_collection(name=collection_name)
-        return collection
-    except Exception as e:
-        logging.error(f"Error creating Chroma client: {e}")
-        return None
-
-def add_to_chroma(collection, chunks, embeddings, document_metadata=None):
-    if not collection or not chunks or embeddings is None:
-        logging.error("Missing required parameters for adding to Chroma")
-        return False
-    ids = [str(i) for i in range(len(chunks))]
-    embeddings_list = embeddings.tolist()
-    metadatas=[]
-    for i in range(len(chunks)):
-        metadata={}
-        if document_metadata:
-            metadata.update(document_metadata)
-        metadata["chunk_id"]=i 
-        metadatas.append(metadata)   
-    try:
-        collection.add(
-            embeddings=embeddings_list,
-            documents=chunks,
-            ids=ids,
-            metadatas=metadatas
-        )
-        logging.info(f"Added {len(chunks)} chunks to ChromaDB")
-        return True
-    except Exception as e:
-        logging.error(f"Error adding to Chroma: {e}")
-        return False
-
-def retrieve_from_chroma(collection, query_embedding, top_k=3):
-    if collection is None or query_embedding is None:
-        logging.error("Collection or query embedding is None")
-        return []
-    try:
-        results = collection.query(query_embeddings=query_embedding.tolist(),
-                                    n_results=top_k,
-                                    include=["documents","metadatas"])
-        contexts=[]
-        for i,doc in enumerate(results["documents"][0]):
-            metadata=results["metadatas"][0][i]
-            doc_name=metadata.get("document_name","Unknown document")
-            contexts.append(f"[FROM: {doc_name}]\n{doc}")
-        return contexts
-    except Exception as e:
-        logging.error(f"Error retrieving from Chroma: {e}")
-        return []
 
 def ensure_uploads_directory():
     Path(UPLOADS_DIR).mkdir(parents=True, exist_ok=True)
@@ -207,32 +138,6 @@ def delete_uploaded_files():
         return True
     except Exception as e:
         logging.error(f"Error deleting uploaded files: {e}")
-        return False
-
-def empty_collection():
-    try:
-        collection = create_chroma_client()
-        if collection:
-            try:
-                #deleting the contents only
-                all_ids = collection.get(include=[])["ids"]
-                if all_ids:
-                    collection.delete(ids=all_ids)
-            except Exception as e:
-                try:
-                    #deleting the collection itself
-                    client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
-                    client.delete_collection(name=DEFAULT_COLLECTION_NAME)
-                    client.get_or_create_collection(name=DEFAULT_COLLECTION_NAME)
-                except Exception as nested_e:
-                    logging.error(f"Error recreating collection: {nested_e}")
-                    return False
-            
-            logging.info("ChromaDB collection emptied successfully")
-            return True
-        return False
-    except Exception as e:
-        logging.error(f"Error emptying collection: {e}")
         return False
 
 ###################################################### for module specific testing below v ###########################
