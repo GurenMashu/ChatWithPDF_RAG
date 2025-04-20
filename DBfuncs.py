@@ -78,7 +78,7 @@ def empty_collection():
                     collection.delete(ids=all_ids)
             except Exception as e:
                 try:
-                    #deleting the collection itself
+                    #deleting the collection itself (ite entire structure)
                     client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
                     client.delete_collection(name=DEFAULT_COLLECTION_NAME)
                     client.get_or_create_collection(name=DEFAULT_COLLECTION_NAME)

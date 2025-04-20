@@ -2,7 +2,6 @@ import streamlit as st
 import os
 from datetime import datetime
 import tempfile
-import base64
 import numpy as np
 import logging
 from fastembed import TextEmbedding
@@ -97,28 +96,26 @@ def main():
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 
-                # Add checkbox next to assistant messages
+                # Adding checkbox only for the assistant responses
                 if message["role"] == "assistant":
-                    # Create a unique key for each checkbox
+                    # Creating a unique key for each checkbox
                     checkbox_key = f"select_response_{i}"
                     
-                    # Check if this response is already in selected_responses
+                    # Checking if this response is already in selected_responses
                     response_details = {
                         "question": st.session_state.messages[i-1]["content"] if i > 0 else "",
                         "answer": message["content"],
                         "timestamp": message.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                     }
                     
-                    # Check if this response is in selected_responses list
+                    # Checking if this response is in selected_responses list
                     is_selected = any(
                         r["answer"] == response_details["answer"] and 
                         r["question"] == response_details["question"]
                         for r in st.session_state.selected_responses
                     )
                     
-                    # Display checkbox with the current state
                     if st.checkbox("Save this response", key=checkbox_key, value=is_selected):
-                        # Add to selected responses if not already there
                         if not is_selected:
                             st.session_state.selected_responses.append(response_details)
                     else:

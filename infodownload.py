@@ -3,6 +3,7 @@ from datetime import datetime
 
 def create_download_link(selected_responses):
     content=""
+    #structure of the downloadable txt file
     for i, resp in enumerate(selected_responses, 1):
         content+=f"Q{i}: {resp["question"]}\n"
         content+=f"A{i}: {resp["answer"]}\n"
